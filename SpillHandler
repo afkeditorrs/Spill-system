@@ -1,0 +1,56 @@
+require(8444816967):Start(
+{
+	
+	DataStoreSettings = {
+		DataStoreEnabled = true,-- By default, it will create a datastore for the currency. Ex. Points
+		DataStoreName = "PointsDataStore1", -- Changing this will reset the datastore value	
+		CreateStats = true, -- By default, this will create the stats found in RewardSettings
+	},
+	
+	PrintChanges = true, -- Prints changes in the console
+	
+	GroupSettings = {
+		GroupId = nil, -- If you only want a rank who is in a group to clean spills use this. If nil, everyone will be able to.
+		GroupRank = 24, -- Rank that is allowed.
+	},
+
+
+	SpillSettings = {
+		DeleteOnUnequip = false, -- If true, the spill will delete if the player is cleaning it and unequips their tool
+		SpillOrientation = Vector3.new(0, 0, 90), -- If the spill is spawning in a weird way, you may need to modify the orientation (put as nil if not needed.)
+		SpawnWaitTime = 5, -- A spill will spawn every x amount of seconds.
+		PathToSpill = script.Items.SpillPart, -- Property where the SpillModel is located.
+		--CleanDuration = 5, -- How long it should take to clean the spill.
+		MaxSpawnedAllowed = 2, -- How many spills should be spawned at once.
+		SpillAreaFolder = workspace.SpillFolder.Areas, -- The areas where the spills should be spawned.
+		SpawnedSpillsFolder = workspace.SpillFolder.CurrentSpills, -- The folder where spills should be parented.
+
+	},
+
+	RewardSettings = {
+		FolderName = "leaderstats", -- Folder in which the stat is located. If left blank, it will just search the player.
+		StatName = "Points", -- The stat name which should be modified.
+		DefaultValue = 0, -- If player data can't be found, there points will be set as this
+		DefaultReward = 3, -- The default amount which should be rewarded
+	},
+
+	ToolNames = {
+		--[[
+		You can add new tools which are allowed to clean spills by adding a table with the following information.
+		{Name = "Mop", Multiplier = 1, CleanDuration = 5},
+		{Name = "Golden Mop", Multiplier = 2, CleanDuration = 1}]] 
+		{
+			Name = "Mop",
+			Multiplier = 1,
+			CleanDuration = 10
+		},
+		{
+			Name = "Golden Mop",
+			Multiplier = 2,
+			CleanDuration = 50,
+			IsSpecial = true
+		},
+	
+	}
+
+})
