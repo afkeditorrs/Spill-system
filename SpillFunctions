@@ -1,0 +1,300 @@
+-- services
+local Players = game:GetService("Players")
+local ServerStorage = game:GetService("ServerStorage")
+local TweenService = game:GetService("TweenService")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+
+
+local EventsFolder = ReplicatedStorage.Events
+local CleanSpillAttemptEvent = EventsFolder.CleanSpillAttempt
+
+local SpillFunctions = {
+	SettingsTable = {}
+}
+
+function SpillFunctions:PlayerAuthorized(player)
+	if (self.SettingsTable.GroupSettings.GroupId) then
+		if (player:GetRankInGroup(self.SettingsTable.GroupSettings.GroupId) >= self.SettingsTable.GroupSettings.GroupRank) then
+			return true
+		end
+	else
+		return true
+	end
+end
+
+function SpillFunctions:PlayerHasTool(player)
+	if (player.Character) then
+		local PlayerCharacter = player.Character
+
+		if (PlayerCharacter:FindFirstChildOfClass("Tool")) then
+			for _, ToolInTable in pairs(self.SettingsTable.ToolNames) do
+				if (PlayerCharacter:FindFirstChild(ToolInTable.Name)) then
+					return ToolInTable
+				end
+			end
+		end
+	end
+end
+
+function SpillFunctions:GetToolInformation(player)
+	if player:IsA("Player") then
+		local EquippedTool = self:PlayerHasTool(player)
+		return {
+			Duration = EquippedTool.CleanDuration,
+			Multiplier = EquippedTool.Multiplier,
+			IsSpecial = EquippedTool.IsSpecial or false
+		}
+	elseif player:IsA("Tool") then
+		for index, tableInfo in pairs(self.SettingsTable.ToolNames) do
+			if tableInfo.Name == player.Name then
+				return {
+					Duration = tableInfo.CleanDuration,
+					Multiplier = tableInfo.Multiplier,
+					IsSpecial = tableInfo.IsSpecial or false
+				}
+			end
+		end
+	end
+end
+
+function SpillFunctions:PlayerCleaningCheck(player)
+	if (player:FindFirstChild("PlayerCleaning")) then
+		return true
+	end
+end
+
+function SpillFunctions:CheckSpillStatus(spill)
+	if (spill:FindFirstChild("BeingCleaned")) then
+		return true
+	end
+end
+
+function SpillFunctions:PlayerClaimSpill(player, spill)
+	local BeingCleaned = Instance.new("StringValue", spill)
+	BeingCleaned.Name = "BeingCleaned"
+	BeingCleaned.Value = player.Name
+end
+
+function SpillFunctions:ChooseRandomArea()
+	local RandomNumber = math.random(1, #self.SettingsTable.SpillSettings.SpillAreaFolder:GetChildren())
+	return self.SettingsTable.SpillSettings.SpillAreaFolder:GetChildren()[RandomNumber]
+end
+
+
+function SpillFunctions:CreateTween(spill, player, dur)		
+	local TweenSettings = TweenInfo.new(dur, Enum.EasingStyle.Linear, Enum.EasingDirection.Out, 0, false, 0)
+	local CleaningSpillTween = TweenService:Create(spill, TweenSettings, {
+		Size = Vector3.new(0, 0, 0)
+	})
+	return CleaningSpillTween
+end
+
+function SpillFunctions:AwardPlayer(player)
+	if self:PlayerAuthorized(player) and self:PlayerHasTool(player) then	
+		local ToolInformation = self:GetToolInformation(player)
+		if player:FindFirstChild(self.SettingsTable.RewardSettings.FolderName) then
+			local PlayerRewardFolder = player:FindFirstChild(self.SettingsTable.RewardSettings.FolderName)
+			local PlayerRewardStat = PlayerRewardFolder:FindFirstChild(self.SettingsTable.RewardSettings.StatName)
+
+			if PlayerRewardStat then
+				PlayerRewardStat.Value += 1 * ToolInformation.Multiplier
+			else
+				warn("Couldn't find the given stat ("..self.SettingsTable.RewardSettings.StatName..") inside of", PlayerRewardFolder)
+			end
+
+		else
+			if (player:FindFirstChild(self.SettingsTable.RewardSettings.StatName)) then
+				player:FindFirstChild(self.SettingsTable.RewardSettings.StatName).Value += 1 * ToolInformation.Multiplier
+			else
+				warn("Nothing to be rewarded")
+			end
+		end
+	end
+end
+
+
+function SpillFunctions:PlayerStartCleaning(player, targetDetector, tool)
+	local SpillObject = targetDetector.Parent
+	local PlayerCharacter = player.Character
+	local PlayerStartedCleaningTime = os.time()
+
+	if (PlayerCharacter) then
+		local UITween
+		local SpillTween
+		local PlayerHumanoid = PlayerCharacter.Humanoid
+
+
+		-- moveto spill
+		local MoveToInProgress = Instance.new("BoolValue", player)
+		MoveToInProgress.Name = "CurrentlyMoving"		
+
+		PlayerHumanoid.MoveToFinished:Connect(function(success)
+			self:PlayerClaimSpill(player, SpillObject)
+			
+			
+
+			if (not PlayerCharacter:FindFirstChildOfClass("Tool") or not player:FindFirstChild("CurrentlyMoving")) then
+				if (SpillObject:FindFirstChild("BeingCleaned")) then
+					SpillObject.BeingCleaned:Destroy()
+				end
+
+				return
+			end
+
+			if (success) then
+				PlayerHumanoid.WalkSpeed = 0
+				PlayerHumanoid.JumpHeight = 0
+				MoveToInProgress:Destroy()
+				--PlayerHumanoid.WalkSpeed = 0
+
+				if (not self:PlayerCleaningCheck(player)) then
+					SpillObject.CleaningProgress.Enabled = true
+					local CleaningValue = Instance.new("ObjectValue", player)
+					CleaningValue.Name = "PlayerCleaning"
+					CleaningValue.Value = SpillObject
+					local BypassResume = false
+					
+					if (self:GetToolInformation(player).IsSpecial) then
+						if (SpillObject:FindFirstChild("WasBeingCleaned")) then
+							if (SpillObject.WasBeingCleaned.TimeLeft.Value > self:GetToolInformation(player).Duration) then
+								BypassResume = self:GetToolInformation(player).Duration
+							end
+						end
+					end 
+
+					if (SpillObject:FindFirstChild("WasBeingCleaned")) then
+						UITween = TweenService:Create(SpillObject.CleaningProgress.BackgroundTween.BarTween, TweenInfo.new(BypassResume or SpillObject.WasBeingCleaned.TimeLeft.Value, Enum.EasingStyle.Sine, Enum.EasingDirection.Out), {
+							Size = UDim2.new(1, 0, 1, 0)
+						})
+						--SpillTween = self:CreateTween(SpillObject, player, SpillObject.WasBeingCleaned.TimeLeft.Value)
+						SpillTween = TweenService:Create(SpillObject, TweenInfo.new(BypassResume or SpillObject.WasBeingCleaned.TimeLeft.Value, Enum.EasingStyle.Linear, Enum.EasingDirection.Out, 0, false, 0), {
+							Size = Vector3.new(0, 0, 0)
+						})
+					else
+						UITween = TweenService:Create(SpillObject.CleaningProgress.BackgroundTween.BarTween, TweenInfo.new(self:GetToolInformation(player).Duration, Enum.EasingStyle.Sine, Enum.EasingDirection.Out), {
+							Size = UDim2.new(1, 0, 1, 0)
+						})
+						--SpillTween = self:CreateTween(SpillObject, player, self:GetToolInformation(player).Duration)
+						SpillTween = TweenService:Create(SpillObject, TweenInfo.new(self:GetToolInformation(player).Duration, Enum.EasingStyle.Linear, Enum.EasingDirection.Out, 0, false, 0), {
+							Size = Vector3.new(0, 0, 0)
+						})
+					end
+
+					SpillTween.Completed:Connect(function()
+						if (SpillObject:FindFirstChild("WasBeingCleaned")) then
+							if (SpillObject.CleaningProgress.BackgroundTween.BarTween.Size ~= UDim2.new(1, 0, 1, 0)) then
+								return
+							end
+						end
+
+
+						if (player:FindFirstChild("PlayerCleaning")) then
+							player.PlayerCleaning:Destroy()
+						end
+
+						self:AwardPlayer(player)
+						SpillObject:Destroy()
+						PlayerHumanoid.WalkSpeed = 16
+						PlayerHumanoid.JumpHeight = 7.2
+					end)
+
+
+					SpillTween:Play()
+					UITween:Play()
+
+				end
+			end
+		end)
+
+		tool.Unequipped:Connect(function()
+			if (player:FindFirstChild("CurrentlyMoving")) then
+				return MoveToInProgress:Destroy()
+			end
+			
+			if (self.SettingsTable.SpillSettings.DeleteOnUnequip) then
+				SpillObject:Destroy()
+				PlayerHumanoid.WalkSpeed = 16
+				PlayerHumanoid.JumpHeight = 7.2
+				
+				if (player:FindFirstChild("PlayerCleaning")) then
+					player.PlayerCleaning:Destroy()
+				end
+			end
+
+			if (SpillObject:FindFirstChild("BeingCleaned")) then
+				if (SpillObject.BeingCleaned.Value == player.Name) then
+					local idk = os.time() - PlayerStartedCleaningTime
+					local WasBeingCleaned
+					local TimeLeft
+
+					if (not SpillObject:FindFirstChild("WasBeingCleaned")) then
+						WasBeingCleaned = Instance.new("BoolValue", SpillObject)
+						WasBeingCleaned.Name = "WasBeingCleaned"
+
+						TimeLeft = Instance.new("IntValue", WasBeingCleaned)
+						TimeLeft.Name = "TimeLeft"
+						TimeLeft.Value = self:GetToolInformation(tool).Duration - idk
+					else
+						WasBeingCleaned = SpillObject:FindFirstChild("WasBeingCleaned")
+						TimeLeft = SpillObject:FindFirstChild("WasBeingCleaned").TimeLeft
+
+
+						TimeLeft.Value -= idk
+					end
+
+					--[[if TimeLeft.Value <= 3 then
+						return SpillObject:Destroy()
+					end]]
+
+					SpillObject.CleaningProgress.Enabled = false
+					SpillObject.BeingCleaned:Destroy()
+
+					if (player:FindFirstChild("PlayerCleaning")) then
+						player.PlayerCleaning:Destroy()
+					end
+					
+
+					if (UITween and SpillTween) then
+						UITween:Pause()
+						SpillTween:Pause()
+					end
+					
+					PlayerHumanoid.WalkSpeed = 16
+					PlayerHumanoid.JumpHeight = 7.2
+				end
+			end
+
+		end)
+
+
+		PlayerHumanoid:GetPropertyChangedSignal("MoveDirection"):Connect(function()
+			if (player:FindFirstChild("CurrentlyMoving")) then
+				player.CurrentlyMoving:Destroy()
+			end
+		end)
+
+		PlayerHumanoid:MoveTo(SpillObject.Position)
+
+
+	end
+end
+
+function SpillFunctions:CreateSpill()
+	if #self.SettingsTable.SpillSettings.SpawnedSpillsFolder:GetChildren() < self.SettingsTable.SpillSettings.MaxSpawnedAllowed then 
+		local NewSpill = self.SettingsTable.SpillSettings.PathToSpill:Clone()
+		local GetArea = self:ChooseRandomArea()
+		local random = Random.new()
+		local RandomCFrameFromPart = GetArea.CFrame * CFrame.new(random:NextNumber(-GetArea.Size.X / 2, GetArea.Size.X / 2), random:NextNumber(-GetArea.Size.Y / 2, GetArea.Size.Y / 2), random:NextNumber(-GetArea.Size.Z / 2, GetArea.Size.Z / 2))
+		NewSpill.CFrame = RandomCFrameFromPart
+
+		if self.SettingsTable.SpillSettings.SpillOrientation then
+			NewSpill.Orientation = self.SettingsTable.SpillSettings.SpillOrientation
+		end
+
+		return NewSpill
+	else
+		print("Attempted to spawn a new spill, but the max amount is spawned.")
+	end
+end
+
+return SpillFunctions
