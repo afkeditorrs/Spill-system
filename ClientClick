@@ -1,0 +1,24 @@
+-- services
+local Players = game:GetService("Players")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+
+-- locals
+local Client = Players.LocalPlayer
+local PlayerMouse = Players.LocalPlayer:GetMouse()
+local EventsFolder = ReplicatedStorage:FindFirstChild("Events")
+local CleanSpillAttemptEvent = EventsFolder:FindFirstChild("CleanSpillAttempt")
+
+PlayerMouse.Button1Down:Connect(function()
+	local Target = PlayerMouse.Target
+	
+	if (PlayerMouse.Target and PlayerMouse.Target:FindFirstChildOfClass("ClickDetector")) then
+		local PlayerTool = Client.Character:FindFirstChildOfClass("Tool")
+		local TargetDetector = PlayerMouse.Target:FindFirstChildOfClass("ClickDetector")
+		
+		if PlayerTool and PlayerTool:FindFirstChild("Handle") then
+			if (PlayerTool.Handle.Position - PlayerMouse.Target.Position).Magnitude <= TargetDetector.MaxActivationDistance then
+				CleanSpillAttemptEvent:FireServer(TargetDetector, PlayerTool, PlayerMouse.Target)
+			end
+		end
+	end
+end)
