@@ -1,0 +1,116 @@
+-- services
+local Players = game:GetService("Players")
+local ServerStorage = game:GetService("ServerStorage")
+local TweenService = game:GetService("TweenService")
+local DataStoreService = game:GetService("DataStoreService")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+
+-- locals
+local SpillFunctionsModule = require(script.SpillFunctions)
+local EventsFolder = ReplicatedStorage.Events
+local CleanSpillAttemptEvent = EventsFolder.CleanSpillAttempt
+
+local SpillHandler = {}
+local Changelog = {
+	Date = "2/5/2024",
+	Changes = {
+		"Converted the script to a module so you won't have to keep getting the new one for each update.",
+		"Added \"IsSpecial\" value inside of your tool configuration. (Read more on DevForum post)",
+		"New setting inside of SpillSettings called \"DeleteOnUnequip\" which allows you to choose if spills should be delete when a player unequips their tool.",
+		"Made it so if they unequip their tool midway through cleaning it stops cleaning and anyone can finish cleaning the spill.",
+	}
+}
+
+function SpillHandler:Start(SettingsTable)
+	if (SettingsTable.PrintChanges) then
+		local str = ""
+		
+		for _, change in pairs(Changelog.Changes) do
+			str = str.."\n".."- ".. change
+		end
+		
+		warn("Changes for", Changelog.Date, "\n",str)
+	end
+	
+	local RewardSettings = SettingsTable.RewardSettings
+	local DataStoreSettings = SettingsTable.DataStoreSettings
+	local DataStore = DataStoreService:GetDataStore(SettingsTable.DataStoreSettings.DataStoreName)
+	SpillFunctionsModule.SettingsTable = SettingsTable
+
+	CleanSpillAttemptEvent.OnServerEvent:Connect(function(player, targetDetector, tool, playerMouse)
+		local AuthorizationCheck = SpillFunctionsModule:PlayerAuthorized(player)
+		local PlayerToolEquipped = SpillFunctionsModule:PlayerHasTool(player)
+		local PlayerIsCleaning = SpillFunctionsModule:PlayerCleaningCheck(player)
+
+		if (AuthorizationCheck and PlayerToolEquipped and not PlayerIsCleaning and not SpillFunctionsModule:CheckSpillStatus(targetDetector.Parent)) then
+
+			if (tool.Handle.Position - playerMouse.Position).Magnitude <= targetDetector.MaxActivationDistance then		
+				if (targetDetector.Parent.Name == SettingsTable.SpillSettings.PathToSpill.Name) then
+					SpillFunctionsModule:PlayerStartCleaning(player, targetDetector, tool)
+				end
+			end
+		end
+	end)
+	
+	Players.PlayerAdded:Connect(function(player)
+		
+		local StatFolder
+		local StatValue
+		
+		if (DataStoreSettings.CreateStats) then
+			StatFolder = Instance.new("Folder", player)
+			StatFolder.Name = RewardSettings.FolderName
+
+			StatValue = Instance.new("IntValue", StatFolder)
+			StatValue.Name = RewardSettings.StatName			
+		else
+			print("Waiting for stats to be made...")			
+			StatFolder = player:WaitForChild(RewardSettings.FolderName)
+			StatValue = StatFolder:WaitForChild(RewardSettings.StatName)
+		end
+		
+		if (StatValue) then
+			local SpillLoaded = Instance.new("BoolValue", player)
+			SpillLoaded.Name = "SpillLoaded"
+			
+			if (DataStoreSettings.DataStoreEnabled) then
+				local PlayerData = DataStore:GetAsync(player.userId)
+				
+				
+				if (PlayerData == 0 or not PlayerData) then
+					StatFolder:FindFirstChild(RewardSettings.StatName).Value = RewardSettings.DefaultValue
+				elseif (PlayerData) then
+					StatFolder:FindFirstChild(RewardSettings.StatName).Value = PlayerData
+				end		
+			end
+		end
+		
+	end)
+
+	-- player left
+	Players.PlayerRemoving:Connect(function(player)
+		local StatFolder = player:FindFirstChild(RewardSettings.FolderName)
+		local StatValue = StatFolder:FindFirstChild(RewardSettings.StatName)
+		
+		if (player:FindFirstChild("PlayerCleaning")) then
+			player.PlayerCleaning.Value:Destroy()
+		end
+		
+		if (player:FindFirstChild("SpillLoaded")) then
+			DataStore:SetAsync(player.UserId, StatValue.Value)
+		else
+			warn("Could not save data for", player.Name, "as their data wasn't loaded properly.")
+		end
+	end)
+
+	while wait(SettingsTable.SpillSettings.SpawnWaitTime) do
+		local Spill = SpillFunctionsModule:CreateSpill()
+
+
+		if Spill then
+			Spill.Parent = SettingsTable.SpillSettings.SpawnedSpillsFolder
+		end
+	end
+end
+
+return SpillHandler
